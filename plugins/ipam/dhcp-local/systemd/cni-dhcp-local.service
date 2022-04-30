@@ -1,0 +1,11 @@
+[Unit]
+Description=CNI DHCP-LOCAL service
+Documentation=https://github.com/containernetworking/plugins/tree/master/plugins/ipam/dhcp
+After=network.target cni-dhcp-local.socket
+Requires=cni-dhcp-local.socket
+
+[Service]
+ExecStart=/opt/cni/bin/dhcp-local daemon
+
+[Install]
+WantedBy=multi-user.target

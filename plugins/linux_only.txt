@@ -1,4 +1,5 @@
 plugins/ipam/dhcp
+plugins/ipam/dhcp-local
 plugins/main/bridge
 plugins/main/host-device
 plugins/main/ipvlan
