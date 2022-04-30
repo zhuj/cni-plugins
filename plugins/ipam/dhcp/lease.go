@@ -78,17 +78,15 @@ var requestOptionsDefault = map[dhcp4.OptionCode]bool{
 	dhcp4.OptionSubnetMask: true,
 }
 
-func prepareOptions(cniArgs string, ProvideOptions []ProvideOption, RequestOptions []RequestOption) (
-	optsRequesting map[dhcp4.OptionCode]bool, optsProviding map[dhcp4.OptionCode][]byte, err error) {
-
-	// parse CNI args
-	cniArgsParsed := map[string]string{}
-	for _, argPair := range strings.Split(cniArgs, ";") {
-		args := strings.SplitN(argPair, "=", 2)
-		if len(args) > 1 {
-			cniArgsParsed[args[0]] = args[1]
-		}
-	}
+func prepareOptions(
+	cniArgsParsed map[string]string,
+	ProvideOptions []ProvideOption,
+	RequestOptions []RequestOption,
+) (
+	optsRequesting map[dhcp4.OptionCode]bool,
+	optsProviding map[dhcp4.OptionCode][]byte,
+	err error,
+) {
 
 	// parse providing options map
 	var optParsed dhcp4.OptionCode
@@ -136,6 +134,17 @@ func prepareOptions(cniArgs string, ProvideOptions []ProvideOption, RequestOptio
 		}
 	}
 	return
+}
+
+func parseCNIArgs(cniArgs string) map[string]string {
+	cniArgsParsed := map[string]string{}
+	for _, argPair := range strings.Split(cniArgs, ";") {
+		args := strings.SplitN(argPair, "=", 2)
+		if len(args) > 1 {
+			cniArgsParsed[args[0]] = args[1]
+		}
+	}
+	return cniArgsParsed
 }
 
 // AcquireLease gets an DHCP lease and then maintains it in the background
@@ -202,11 +211,10 @@ func (l *DHCPLease) Stop() {
 
 func (l *DHCPLease) getOptionsWithClientId() dhcp4.Options {
 	opts := make(dhcp4.Options)
-	opts[dhcp4.OptionClientIdentifier] = []byte(l.clientID)
-	// client identifier's first byte is "type"
-	newClientID := []byte{0}
-	newClientID = append(newClientID, opts[dhcp4.OptionClientIdentifier]...)
-	opts[dhcp4.OptionClientIdentifier] = newClientID
+	// client identifier's first byte is "type" should be \000
+	bytes := make([]byte, 1+len(l.clientID))
+	copy(bytes[1:], l.clientID)
+	opts[dhcp4.OptionClientIdentifier] = bytes
 	return opts
 }
 
@@ -217,10 +225,11 @@ func (l *DHCPLease) getAllOptions() dhcp4.Options {
 		opts[k] = v
 	}
 
-	opts[dhcp4.OptionParameterRequestList] = []byte{}
+	var params []byte
 	for k := range l.optsRequesting {
-		opts[dhcp4.OptionParameterRequestList] = append(opts[dhcp4.OptionParameterRequestList], byte(k))
+		params = append(params, byte(k))
 	}
+	opts[dhcp4.OptionParameterRequestList] = params
 	return opts
 }
 

@@ -42,7 +42,8 @@ type NetConf struct {
 
 type IPAMConfig struct {
 	types.IPAM
-	DaemonSocketPath string `json:"daemonSocketPath"`
+	DaemonSocketPath     string `json:"daemonSocketPath"`
+	PodNameBasedClientID bool   `json:"podNameBasedClientID"`
 	// When requesting IP from DHCP server, carry these options for management purpose.
 	// Some fields have default values, and can be override by setting a new option with the same name at here.
 	ProvideOptions []ProvideOption `json:"provide"`

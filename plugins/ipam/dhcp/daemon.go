@@ -35,6 +35,8 @@ import (
 
 var errNoMoreTries = errors.New("no more tries")
 
+const k8sPodName = "K8S_POD_NAME"
+
 type DHCP struct {
 	mux             sync.Mutex
 	leases          map[string]*DHCPLease
@@ -52,10 +54,9 @@ func newDHCP(clientTimeout, clientResendMax time.Duration) *DHCP {
 	}
 }
 
-// TODO: current client ID is too long. At least the container ID should not be used directly.
 // A seperate issue is necessary to ensure no breaking change is affecting other users.
-func generateClientID(containerID string, netName string, ifName string) string {
-	clientID := containerID + "/" + netName + "/" + ifName
+func generateClientID(prefix string, netName string, ifName string) string {
+	clientID := prefix + "/" + netName + "/" + ifName
 	// defined in RFC 2132, length size can not be larger than 1 octet. So we truncate 254 to make everyone happy.
 	if len(clientID) > 254 {
 		clientID = clientID[0:254]
@@ -71,12 +72,14 @@ func (d *DHCP) Allocate(args *skel.CmdArgs, result *current.Result) error {
 		return fmt.Errorf("error parsing netconf: %v", err)
 	}
 
-	optsRequesting, optsProviding, err := prepareOptions(args.Args, conf.IPAM.ProvideOptions, conf.IPAM.RequestOptions)
+	cniArgsParsed := parseCNIArgs(args.Args)
+	optsRequesting, optsProviding, err := prepareOptions(cniArgsParsed, conf.IPAM.ProvideOptions, conf.IPAM.RequestOptions)
 	if err != nil {
 		return err
 	}
 
-	clientID := generateClientID(args.ContainerID, conf.Name, args.IfName)
+	prefix := clientIDPrefix(args, cniArgsParsed, conf.IPAM.PodNameBasedClientID)
+	clientID := generateClientID(prefix, conf.Name, args.IfName)
 	hostNetns := d.hostNetnsPrefix + args.Netns
 	l, err := AcquireLease(clientID, hostNetns, args.IfName,
 		optsRequesting, optsProviding,
@@ -102,6 +105,16 @@ func (d *DHCP) Allocate(args *skel.CmdArgs, result *current.Result) error {
 	return nil
 }
 
+func clientIDPrefix(args *skel.CmdArgs, cniArgsParsed map[string]string, usePodName bool) string {
+	prefix := args.ContainerID
+	if usePodName {
+		if podName := cniArgsParsed[k8sPodName]; len(podName) > 0 {
+			prefix = podName
+		}
+	}
+	return prefix
+}
+
 // Release stops maintenance of the lease acquired in Allocate()
 // and sends a release msg to the DHCP server.
 func (d *DHCP) Release(args *skel.CmdArgs, reply *struct{}) error {
@@ -110,7 +123,9 @@ func (d *DHCP) Release(args *skel.CmdArgs, reply *struct{}) error {
 		return fmt.Errorf("error parsing netconf: %v", err)
 	}
 
-	clientID := generateClientID(args.ContainerID, conf.Name, args.IfName)
+	cniArgsParsed := parseCNIArgs(args.Args)
+	prefix := clientIDPrefix(args, cniArgsParsed, conf.IPAM.PodNameBasedClientID)
+	clientID := generateClientID(prefix, conf.Name, args.IfName)
 	if l := d.getLease(clientID); l != nil {
 		l.Stop()
 		d.clearLease(clientID)
